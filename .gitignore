@@ -1,0 +1,19 @@
+# 数据文件目录
+data/
+
+# 测试数据目录
+test_data/
+
+# Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE 相关文件
+.vscode/
+.idea/
+
+# 临时文件
+nul
+*.log
