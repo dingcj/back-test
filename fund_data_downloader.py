@@ -183,7 +183,8 @@ class FundDataDownloader:
                         "累计净值": self._parse_number(clean_text(cols[2])),
                         "日增长率(%)": clean_text(cols[3]),
                         "申购状态": clean_text(cols[4]) if len(cols) > 4 else "",
-                        "赎回状态": clean_text(cols[5]) if len(cols) > 5 else ""
+                        "赎回状态": clean_text(cols[5]) if len(cols) > 5 else "",
+                        "分红送配": clean_text(cols[6]) if len(cols) > 6 else ""
                     }
                     records.append(record)
 
@@ -209,7 +210,8 @@ class FundDataDownloader:
                         "累计净值": self._parse_number(clean_html(cols[2])),
                         "日增长率(%)": clean_html(cols[3]),
                         "申购状态": clean_html(cols[4]) if len(cols) > 4 else "",
-                        "赎回状态": clean_html(cols[5]) if len(cols) > 5 else ""
+                        "赎回状态": clean_html(cols[5]) if len(cols) > 5 else "",
+                        "分红送配": clean_html(cols[6]) if len(cols) > 6 else ""
                     }
                     records.append(record)
 
