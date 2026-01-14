@@ -17,3 +17,4 @@ __pycache__/
 # 临时文件
 nul
 *.log
+results/

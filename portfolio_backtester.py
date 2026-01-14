@@ -131,15 +131,78 @@ class Portfolio:
 
         print(f"\n  持仓总市值: {total_holding_value:.2f} 元")
         print(f"  累计投入: {abs(self.cash):.2f} 元")
-        print(f"  总资产: {total_holding_value:.2f} 元")
 
-        # 第二步：执行定投申购（使用T日净值）
-        print(f"\n【定投申购】(使用 {date.strftime('%Y-%m-%d')} 净值)")
+        # 计算当前持仓比例
+        current_values = {}
+        for fund_code in self.target_allocations.keys():
+            shares = shares_before[fund_code]
+            prev_nav = prev_navs.get(fund_code, 0)
+            value = shares * prev_nav
+            current_values[fund_code] = value
+
+        print(f"\n【当前持仓比例】")
+        for fund_code, value in current_values.items():
+            if total_holding_value > 0:
+                current_ratio = value / total_holding_value
+                target_ratio = self.target_allocations[fund_code]
+                deviation = current_ratio - target_ratio
+                status = "偏高" if deviation > 0.01 else ("偏低" if deviation < -0.01 else "正常")
+                print(f"  {fund_code}: {current_ratio*100:.2f}% (目标{target_ratio*100:.1f}%, {status})")
+            else:
+                print(f"  {fund_code}: 0.00% (首次定投)")
+
+        # 第二步：计算再平衡后的申购金额分配
+        print(f"\n【再平衡计算】")
+        expected_total_asset = total_holding_value + investment_amount
+        print(f"  定投后预期总资产: {expected_total_asset:.2f} 元")
+
+        investment_allocations = {}  # 每个基金的申购金额
 
         for fund_code, target_ratio in self.target_allocations.items():
-            # 按目标比例分配本次定投金额
-            invest_amount = investment_amount * target_ratio
+            target_value = expected_total_asset * target_ratio
+            current_value = current_values[fund_code]
+            needed_amount = target_value - current_value
+
+            print(f"  {fund_code}:")
+            print(f"    目标市值: {target_value:.2f} 元 (目标比例{target_ratio*100:.1f}%)")
+            print(f"    当前市值: {current_value:.2f} 元")
+            print(f"    需要买入: {needed_amount:.2f} 元")
+
+            if needed_amount > 0:
+                investment_allocations[fund_code] = needed_amount
+            else:
+                print(f"    → 跳过（当前比例偏高，不买入）")
+
+        # 验证并调整总投入金额
+        total_invest = sum(investment_allocations.values())
+        print(f"\n  验证: 计划买入总额 = {total_invest:.2f} 元")
+
+        # 如果买入总额超过定投金额，按比例缩减
+        if total_invest > investment_amount + 0.01:  # 允许0.01元误差
+            scale_factor = investment_amount / total_invest
+            print(f"  警告: 计划买入总额({total_invest:.2f}) > 定投金额({investment_amount:.2f})")
+            print(f"  调整: 按比例缩减至定投金额 (缩放系数: {scale_factor:.4f})")
+
+            # 按比例缩减每个基金的买入金额
+            for fund_code in investment_allocations:
+                original_amount = investment_allocations[fund_code]
+                investment_allocations[fund_code] = original_amount * scale_factor
+                print(f"    {fund_code}: {original_amount:.2f} → {investment_allocations[fund_code]:.2f} 元")
+
+            total_invest = investment_amount  # 调整后总额等于定投金额
+            print(f"  [OK] 调整后买入总额 = {total_invest:.2f} 元")
+        elif abs(total_invest - investment_amount) > 0.01:
+            print(f"  警告: 买入总额({total_invest:.2f}) < 定投金额({investment_amount:.2f})")
+            print(f"  说明: 部分基金比例偏高，未完全使用定投金额")
+        else:
+            print(f"  [OK] 验证通过")
+
+        # 第三步：执行定投申购（使用T日净值）
+        print(f"\n【定投申购】(使用 {date.strftime('%Y-%m-%d')} 净值)")
+
+        for fund_code, invest_amount in investment_allocations.items():
             nav = fund_navs[fund_code]
+            target_ratio = self.target_allocations[fund_code]
 
             # 执行申购（使用当日净值T）
             shares = invest_amount / nav
@@ -150,7 +213,7 @@ class Portfolio:
             print(f"\n  基金: {fund_code}")
             print(f"    目标比例: {target_ratio*100:.1f}%")
             print(f"    定投前份额: {shares_before[fund_code]:.2f} 份")
-            print(f"    投资金额: {invest_amount:.2f} 元")
+            print(f"    投资金额: {invest_amount:.2f} 元 (根据再平衡计算)")
             print(f"    定投日净值: {nav:.4f} 元/份 (日期: {date.strftime('%Y-%m-%d')})")
             print(f"    计算过程: {invest_amount:.2f} ÷ {nav:.4f} = {shares:.2f} 份")
             print(f"    获得份额: {shares:.2f} 份")
