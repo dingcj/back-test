@@ -367,6 +367,10 @@ class BacktestEngine:
         prev_date = None
         prev_navs = {}
 
+        # 待定投次数：用于记录因非交易日或不可申购而累积的定投次数
+        pending_investments = 0
+        last_checked_date = start_dt - timedelta(days=1)  # 上次检查定投的日期
+
         for i, current_date in enumerate(trading_days):
             # 获取当日净值
             current_navs = {}
@@ -390,32 +394,63 @@ class BacktestEngine:
             if any(dividend_info.values()):
                 portfolio.process_dividends(current_date, current_navs, dividend_info)
 
-            # 第二步：如果是定投日，检查申购状态后执行定投（使用T日净值）
-            if self.schedule.is_investment_day(current_date):
+            # 第二步：计算自上次检查以来，有几个定投日（包括非交易日）
+            # 遍历从 last_checked_date + 1 到 current_date 的所有日期
+            check_date = last_checked_date + timedelta(days=1)
+            while check_date <= current_date:
+                if self.schedule.is_investment_day(check_date):
+                    pending_investments += 1
+                    if self.schedule.frequency == 'daily':
+                        # 日定投：检查这一天是否是交易日
+                        if check_date not in trading_days:
+                            print(f"  [顺延] {check_date.strftime('%Y-%m-%d')} 是非交易日，定投顺延")
+                    else:
+                        # 周/月定投：记录计划定投日
+                        print(f"  [记录] {check_date.strftime('%Y-%m-%d')} 是计划定投日")
+                check_date += timedelta(days=1)
+
+            last_checked_date = current_date
+
+            # 第三步：如果有待定投次数，检查申购状态后执行定投（使用T日净值）
+            if pending_investments > 0:
                 # 检查所有基金是否都可以申购
                 can_purchase, blocked_funds = self.data_manager.can_purchase_all(
                     self.fund_codes, current_date, fund_data
                 )
 
-                if not can_purchase:
-                    # 有基金暂停申购，跳过本次定投
-                    print(f"\n【定投跳过】{current_date.strftime('%Y-%m-%d')}")
+                if can_purchase:
+                    # 可以申购，执行所有累积的定投
+                    print(f"\n【执行定投】{current_date.strftime('%Y-%m-%d')}")
+                    print(f"  待定投次数: {pending_investments} 次")
+                    if pending_investments > 1:
+                        print(f"  说明: 包含之前因非交易日/不可申购而顺延的定投")
+
+                    if prev_date is None:
+                        # 第一次定投，没有前一日数据
+                        prev_date = current_date
+                        prev_navs = current_navs.copy()
+
+                    # 执行所有累积的定投
+                    for _ in range(pending_investments):
+                        portfolio.invest(
+                            investment_amount=self.schedule.amount,
+                            fund_navs=current_navs,
+                            date=current_date,
+                            prev_navs=prev_navs,
+                            prev_date=prev_date
+                        )
+                        # 更新 prev_date 和 prev_navs，使下一次定投使用本次的净值
+                        prev_date = current_date
+                        prev_navs = current_navs.copy()
+
+                    # 清零待定投次数
+                    pending_investments = 0
+                else:
+                    # 不可申购，继续累积
+                    print(f"\n【定投顺延】{current_date.strftime('%Y-%m-%d')}")
                     print(f"  原因: 以下基金暂停申购/封闭: {', '.join(blocked_funds)}")
+                    print(f"  待定投次数: {pending_investments} 次")
                     print(f"  说明: 将等待下一个所有基金都可申购的交易日")
-                    continue
-
-                if prev_date is None:
-                    # 第一次定投，没有前一日数据
-                    prev_date = current_date
-                    prev_navs = current_navs.copy()
-
-                portfolio.invest(
-                    investment_amount=self.schedule.amount,
-                    fund_navs=current_navs,
-                    date=current_date,
-                    prev_navs=prev_navs,
-                    prev_date=prev_date
-                )
 
             # 记录当日组合价值（使用T日净值）
             total_value = portfolio.get_value(current_navs)
@@ -429,8 +464,16 @@ class BacktestEngine:
             })
 
             # 更新前一日数据
-            prev_date = current_date
-            prev_navs = current_navs.copy()
+            if prev_date is None:
+                prev_date = current_date
+                prev_navs = current_navs.copy()
+            else:
+                prev_date = current_date
+                prev_navs = current_navs.copy()
+
+        # 处理最后可能剩余的待定投（如果有）
+        if pending_investments > 0:
+            print(f"\n【警告】回测结束，仍有 {pending_investments} 次定投未执行（无可申购交易日）")
 
         print(f"\n{'='*60}")
         print(f"回测完成")
